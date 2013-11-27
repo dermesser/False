@@ -165,7 +165,7 @@ falseParse a@(c:cs) | isNumber c = (FNum . read . takeWhile isNumber $ a) : (fal
                     | c == '"' = let str = takeWhile (/='"') cs
                                      rest = drop (2 + length str) a
                                  in FIOOp (FWriteString str) : falseParse rest                                           
-                    | c == '{' = falseParse (drop (2 + length (getComment a)) a)
+                    | c == '{' = falseParse (drop (2 + length (dropComment a)) a)
                     | otherwise = falseParse cs
 
 getLambda :: Code -> Code
@@ -179,13 +179,13 @@ getLambda = init . tail . gl 0
                                 then []
                                 else c : gl i cs
 
-getComment :: Code -> Code
-getComment = init . tail . gc 0
+dropComment :: Code -> Code
+dropComment = gc 0
     where gc :: Int -> Code -> Code
           gc _ [] = []
           gc i (c:cs) = case c of
-                          '{' -> c : gc (i + 1) cs
-                          '}' -> c : gc (i - 1) cs
+                          '{' -> gc (i + 1) cs
+                          '}' -> gc (i - 1) cs
                           _ -> if i == 0
-                                then []
-                                else c : gc i cs
+                                then cs
+                                else gc i cs
