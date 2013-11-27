@@ -1,63 +1,7 @@
 module FalseLib.Parse where
 
-{- From esolangs.org:
-    
-    Literals
-
-        123 put integer onto the stack
-        'c put character code onto the stack 
-
-        Stack
-
-        $ DUP
-        % DROP
-        \ SWAP
-        @ ROT
-        ø PICK (dup the nth stack item) 
-
-        Arithmetic
-
-        +
-
-        *
-        /
-        _ negate (negative numbers are entered "123_")
-        & bitwise AND
-        | bitwise OR
-        ~ bitwise NOT 
-
-        Comparison (false is zero, true is all bits set (-1 or ~0) so that bitwise operators may be used)
-
-        > greater than
-        = equals 
-
-        Lambdas and flow control (tests are for non-zero)
-
-        [...] define and put a lambda onto the stack
-        ! execute lambda
-        ? conditional execute: condition[true]?
-        if-else can be expressed as: condition$[\true\]?~[false]? 
-        # while loop: [condition][body]# 
-
-            Names
-
-                a-z put a reference to one of the 26 available variables onto the stack
-                : store into a variable
-                ; fetch from a variable 
-
-                I/O
-
-                ^ read a character (-1 for end-of-input)
-                , write a character
-                "string" write a string (may contain embedded newlines)
-                . write top of stack as a decimal integer
-                ß flush buffered input/output 
-
-                Other
-
-                {...} comment
-        whitespace is ignored, may be needed to separate consecutive integers 
-
+{-
+    Reference documentation: http://strlen.com/false/false.txt
 -}
 
 import Data.Char
