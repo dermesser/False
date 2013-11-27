@@ -95,7 +95,7 @@ falseParse a@(c:cs) | isNumber c = (FNum . read . takeWhile isNumber $ a) : (fal
                                                 '?' -> FControl FIf
                                                 '#' -> FControl FWhile
                                             : falseParse cs
-                    | c >= 'a' && c <= 'z' = FVariableOp (FVarRef c) : falseParse cs
+                    | isAsciiLower c = FVariableOp (FVarRef c) : falseParse cs
                     | c `elem` ";:" = case c of
                                                 ';' -> FVariableOp FGet
                                                 ':' -> FVariableOp FPut
