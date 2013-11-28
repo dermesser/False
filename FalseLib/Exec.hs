@@ -8,7 +8,7 @@ import System.IO
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as Map
 
-data FalseData = FalseNum Double
+data FalseData = FalseNum Int
                | FalseChar Char
                | FalseLambda [FalseCode]
                | FalseVRef Char
@@ -22,8 +22,8 @@ type FState = (FStack,FMap)
 -- FExecM a => FState -> IO (a,FState)
 type FExecM = StateT FState IO
 
-fTrue :: Double
-fTrue = fromIntegral (complement 0 :: Int)
+fTrue :: Int
+fTrue = complement 0
 
 emptyStack :: FStack
 emptyStack = []
@@ -51,8 +51,8 @@ fPutVar :: Char -> FalseData -> FExecM ()
 fPutVar c d = StateT $ \(s,m) -> return ((),(s,Map.insert c d m))
 
 -- type safe pops
-fPopDouble :: FExecM Double
-fPopDouble = do
+fPopNum :: FExecM Int
+fPopNum = do
         d <- fPop
         case d of
             FalseNum n -> return n
@@ -115,65 +115,65 @@ frot = do
 fpick :: FExecM ()
 fpick = do
         (FalseNum n) <- fPop
-        it <- fGetNItem ((round n)-1)
+        it <- fGetNItem (n-1)
         fPush it
 
 fplus :: FExecM ()
 fplus = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ a + b
 
 fminus :: FExecM ()
 fminus = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ b - a
 
 fmult :: FExecM ()
 fmult = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ a * b
 
 fdivide :: FExecM ()
 fdivide = do
-        a <- fPopDouble
-        b <- fPopDouble
-        fPush . FalseNum $ b / a
+        a <- fPopNum
+        b <- fPopNum
+        fPush . FalseNum $ b `div` a
 
 fnegate :: FExecM ()
 fnegate = do
-        a <- fPopDouble
+        a <- fPopNum
         fPush . FalseNum $ - a
 
 fand :: FExecM ()
 fand = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ if a /= 0 && b /= 0 then (fTrue) else 0
 
 for :: FExecM ()
 for = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ if a /= 0 || b /= 0 then (fTrue) else 0
 
 fnot :: FExecM ()
 fnot = do
-        a <- fPopDouble
+        a <- fPopNum
         fPush . FalseNum $ if a == 0 then (fTrue) else 0
 
 fgreater :: FExecM ()
 fgreater = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ if b > a then fTrue else 0
 
 fequal :: FExecM ()
 fequal = do
-        a <- fPopDouble
-        b <- fPopDouble
+        a <- fPopNum
+        b <- fPopNum
         fPush . FalseNum $ if b == a then fTrue else 0
 
 fexec :: FExecM ()
@@ -184,7 +184,7 @@ fexec = do
 fif :: FExecM ()
 fif = do
         code <- fPopLambda
-        b <- fPopDouble
+        b <- fPopNum
         if b /= 0
          then falseExec code
          else return ()
@@ -194,7 +194,7 @@ fwhile = do
         code <- fPopLambda
         cond <- fPopLambda
         falseExec cond
-        e <- fPopDouble
+        e <- fPopNum
         if e /= 0
          then do
                 falseExec code
@@ -207,6 +207,7 @@ fget :: FExecM ()
 fget = do
         ref <- fPopRef
         v <- fGetVar ref
+        fPush (FalseVRef ref)
         fPush v
 
 fput :: FExecM ()
@@ -231,8 +232,7 @@ fwritestring s = do
 
 fprintint :: FExecM ()
 fprintint = do
-        d <- fPopDouble
-        fPush (FalseNum d)
+        d <- fPopNum
         liftIO (print d)
 
 fflush :: FExecM ()

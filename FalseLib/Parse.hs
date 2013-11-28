@@ -123,7 +123,7 @@ getLambda = init . tail . gl 0
           gl _ [] = []
           gl i (c:cs) = case c of
                           '[' -> c : gl (i + 1) cs
-                          ']' -> c : gl (i - 1) cs
+                          ']' -> if (i - 1) > 0 then c : gl (i - 1) cs else "]"
                           _ -> if i == 0
                                 then []
                                 else c : gl i cs
@@ -134,7 +134,7 @@ dropComment = gc 0
           gc _ [] = []
           gc i (c:cs) = case c of
                           '{' -> gc (i + 1) cs
-                          '}' -> gc (i - 1) cs
+                          '}' -> if (i - 1) > 0 then gc (i - 1) cs else []
                           _ -> if i == 0
                                 then cs
                                 else gc i cs
