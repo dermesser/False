@@ -5,6 +5,8 @@ module FalseLib.Parse where
 -}
 
 import Data.Char
+import Data.Either
+import Control.Monad.Error
 
 data FalseCode = 
                 FNum Int
@@ -62,54 +64,57 @@ data FIO =
 
 type Code = String
 
-falseParse :: Code -> [FalseCode]
-falseParse [] = []
-falseParse a@(c:cs) | isNumber c = (FNum . read . takeWhile isNumber $ a) : (falseParse . dropWhile isNumber $ a)
-                    | c == '\'' = (FChar . head $ cs) : (falseParse . tail $ cs)
-                    | c `elem` "$%\\@ø" = case c of
-                                                '$' -> FStackOp FDUP
-                                                '%' -> FStackOp FDROP
-                                                '\\' -> FStackOp FSWAP
-                                                '@' -> FStackOp FROT
-                                                '\248' -> FStackOp FPICK -- This is AltGr+o (\248) (Unicode U+00F8) -> ø
-                                            : falseParse cs
-                    | c `elem` "+-*/_&|~" = case c of
-                                                '+' -> FArithm FPlus
-                                                '-' -> FArithm FMinus
-                                                '*' -> FArithm FMult
-                                                '/' -> FArithm FDivide
-                                                '_' -> FArithm FNegate
-                                                '&' -> FArithm FAnd
-                                                '|' -> FArithm FOr
-                                                '~' -> FArithm FNot
-                                            : falseParse cs
-                    | c `elem` ">=" = case c of
-                                                '>' -> FCompare FGreater
-                                                '=' -> FCompare FEqual
-                                            : falseParse cs
+falseParse :: Code -> Either String [FalseCode]
+falseParse [] = Right []
+falseParse a@(c:cs) | isNumber c = (falseParse . dropWhile isNumber $ a) >>= \r -> Right $ (FNum . read . takeWhile isNumber $ a) : r
+                    | c == '\'' = (falseParse . tail $ cs) >>= \r ->  let c' = head cs in
+                                                                      if isAlpha c'
+                                                                      then Right $ FChar (head cs) : r
+                                                                      else throwError $ "Expected letter as char literal; got: '" ++ [c'] ++ "' at " ++ take 5 a ++ " ..."
+                    | c `elem` "$%\\@ø" = falseParse cs >>= \r -> Right $ case c of
+                                                                    '$' -> FStackOp FDUP
+                                                                    '%' -> FStackOp FDROP
+                                                                    '\\' -> FStackOp FSWAP
+                                                                    '@' -> FStackOp FROT
+                                                                    '\248' -> FStackOp FPICK -- This is AltGr+o (\248) (Unicode U+00F8) -> ø
+                                                                : r
+                    | c `elem` "+-*/_&|~" = falseParse cs >>= \r -> Right $ case c of
+                                                                    '+' -> FArithm FPlus
+                                                                    '-' -> FArithm FMinus
+                                                                    '*' -> FArithm FMult
+                                                                    '/' -> FArithm FDivide
+                                                                    '_' -> FArithm FNegate
+                                                                    '&' -> FArithm FAnd
+                                                                    '|' -> FArithm FOr
+                                                                    '~' -> FArithm FNot
+                                                                : r
+                    | c `elem` ">=" = falseParse cs >>= \r -> Right $ case c of
+                                                                    '>' -> FCompare FGreater
+                                                                    '=' -> FCompare FEqual
+                                                                : r
                     | c == '[' = let lambdacode = getLambda a
                                      rest = drop (2 + length lambdacode) a
-                                 in FControl (FLambda (falseParse lambdacode)) : falseParse rest
-                    | c `elem` "!?#" = case c of
-                                                '!' -> FControl FExec
-                                                '?' -> FControl FIf
-                                                '#' -> FControl FWhile
-                                            : falseParse cs
-                    | isAsciiLower c = FVariableOp (FVarRef c) : falseParse cs
-                    | c `elem` ";:" = case c of
-                                                ';' -> FVariableOp FGet
-                                                ':' -> FVariableOp FPut
-                                            : falseParse cs
-                    | c `elem` "^,.ß" = case c of
-                                                '^' -> FIOOp FRead
-                                                ',' -> FIOOp FWrite
-                                                '.' -> FIOOp FPrintInt
-                                                'ß' -> FIOOp FFlush
-                                            : falseParse cs
+                                 in falseParse lambdacode >>= \lc -> falseParse rest >>= \r -> Right $ (FControl $ FLambda lc) : r
+                    | c `elem` "!?#" = falseParse cs >>= \r -> Right $ case c of
+                                                                    '!' -> FControl FExec
+                                                                    '?' -> FControl FIf
+                                                                    '#' -> FControl FWhile
+                                                                : r
+                    | isAsciiLower c = falseParse cs >>= \r -> Right $ FVariableOp (FVarRef c) : r
+                    | c `elem` ";:" = falseParse cs >>= \r -> Right $ case c of
+                                                                    ';' -> FVariableOp FGet
+                                                                    ':' -> FVariableOp FPut
+                                                                : r
+                    | c `elem` "^,.ß" = falseParse cs >>= \r -> Right $ case c of
+                                                                    '^' -> FIOOp FRead
+                                                                    ',' -> FIOOp FWrite
+                                                                    '.' -> FIOOp FPrintInt
+                                                                    'ß' -> FIOOp FFlush
+                                                                : r
                     | c == '"' = let str = takeWhile (/='"') cs
                                      rest = drop (2 + length str) a
-                                 in FIOOp (FWriteString str) : falseParse rest                                           
-                    | c == '{' = falseParse (drop (2 + length (dropComment a)) a)
+                                 in falseParse rest >>= \r -> Right $ FIOOp (FWriteString str) : r
+                    | c == '{' = falseParse (dropComment a)
                     | otherwise = falseParse cs
 
 getLambda :: Code -> Code

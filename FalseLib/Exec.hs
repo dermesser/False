@@ -2,6 +2,7 @@ module FalseLib.Exec where
 
 import FalseLib.Parse
 
+import Control.Monad.Error
 import Data.Bits
 import System.IO
 import Control.Monad.State.Strict
@@ -10,7 +11,7 @@ import qualified Data.Map.Strict as Map
 data FalseData = FalseNum Double
                | FalseChar Char
                | FalseLambda [FalseCode]
-               | FalseRef Char
+               | FalseVRef Char
                deriving Show
 
 type FStack = [FalseData]
@@ -18,6 +19,7 @@ type FMap = Map.Map Char FalseData
 
 type FState = (FStack,FMap)
 
+-- FExecM a => FState -> IO (a,FState)
 type FExecM = StateT FState IO
 
 fTrue :: Double
@@ -29,31 +31,53 @@ emptyStack = []
 emptyMap :: FMap
 emptyMap = Map.empty
 
-emptyState :: FExecM ()
-emptyState = StateT $ \_ -> return ((),(emptyStack,emptyMap))
+emptyState :: FState
+emptyState = (emptyStack,emptyMap)
 
 fPush :: FalseData -> FExecM ()
 fPush d = StateT $ \(s,m) -> return ((),(d:s,m))
 
 fPop :: FExecM FalseData
-fPop = StateT $ \(s:ss,m) -> return (s,(ss,m))
+fPop = StateT $ f
+    where f ([],m) = error "Runtime error :: Empty stack!"
+          f (s:ss,m) = return (s,(ss,m))
+
+fGetVar :: Char -> FExecM FalseData
+fGetVar c = StateT $ \(s,m) -> case Map.lookup c m of
+                                Nothing -> error "Runtime error :: Undefined reference!"
+                                Just v -> return (v,(s,m))
+
+fPutVar :: Char -> FalseData -> FExecM ()
+fPutVar c d = StateT $ \(s,m) -> return ((),(s,Map.insert c d m))
 
 -- type safe pops
 fPopDouble :: FExecM Double
 fPopDouble = do
-        (FalseNum d) <- fPop
-        return d
+        d <- fPop
+        case d of
+            FalseNum n -> return n
+            _ -> error "Runtime error :: Expected number on stack!"
 
 fPopLambda :: FExecM [FalseCode]
 fPopLambda = do
-        (FalseLambda c) <- fPop
-        return c
+        c <- fPop
+        case c of
+            FalseLambda l -> return l
+            _ -> error "Runtime error :: Expected Lambda on stack!"
 
-fPop2 :: FExecM (FalseData,FalseData)
-fPop2 = do
-        a <- fPop
-        b <- fPop
-        return (a,b)
+fPopRef :: FExecM Char
+fPopRef = do
+        v <- fPop
+        case v of
+            FalseVRef r -> return r
+            _ -> error "Runtime error :: Expected reference on stack!"
+
+fPopChar :: FExecM Char
+fPopChar = do
+        v <- fPop
+        case v of
+            FalseChar r -> return r
+            _ -> error "Runtime error :: Expected character on stack!"
 
 fGetNItem :: Int -> FExecM FalseData
 fGetNItem i = StateT $ \(s,m) -> return (s !! i,(s,m))
@@ -154,7 +178,7 @@ fequal = do
 
 fexec :: FExecM ()
 fexec = do
-        (FalseLambda code) <- fPop
+        l@(FalseLambda code) <- fPop
         falseExec code
 
 fif :: FExecM ()
@@ -179,6 +203,40 @@ fwhile = do
                 fwhile
          else return ()
 
+fget :: FExecM ()
+fget = do
+        ref <- fPopRef
+        v <- fGetVar ref
+        fPush v
+
+fput :: FExecM ()
+fput = do
+        ref <- fPopRef
+        d <- fPop
+        fPutVar ref d
+
+fread :: FExecM ()
+fread = do
+        c <- liftIO getChar
+        fPush (FalseChar c)
+
+fwrite :: FExecM ()
+fwrite = do
+        c <- fPopChar
+        liftIO (putChar c)
+
+fwritestring :: String -> FExecM ()
+fwritestring s = do
+        liftIO (putStr s)
+
+fprintint :: FExecM ()
+fprintint = do
+        d <- fPopDouble
+        fPush (FalseNum d)
+        liftIO (print d)
+
+fflush :: FExecM ()
+fflush = liftIO (hFlush stdout)
 
 falseExec :: [FalseCode] -> FExecM ()
 falseExec [] = return ()
@@ -208,3 +266,16 @@ falseExec a@(c:cs) = case c of
                                             FExec -> fexec >> falseExec cs
                                             FIf -> fif >> falseExec cs
                                             FWhile -> fwhile >> falseExec cs
+                        FVariableOp o -> case o of
+                                            FVarRef c -> fPush (FalseVRef c) >> falseExec cs
+                                            FGet -> fget >> falseExec cs
+                                            FPut -> fput >> falseExec cs
+                        FIOOp o -> case o of
+                                            FRead -> fread >> falseExec cs
+                                            FWrite -> fwrite >> falseExec cs
+                                            FWriteString s -> fwritestring s >> falseExec cs
+                                            FPrintInt -> fprintint >> falseExec cs
+                                            FFlush -> fflush >> falseExec cs
+
+fExec :: [FalseCode] -> IO ()
+fExec c = void $ runStateT (falseExec c) emptyState
