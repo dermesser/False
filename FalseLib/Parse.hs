@@ -8,7 +8,9 @@ import Data.Char
 import Data.Either
 import Control.Monad.Error
 
-data FalseCode = 
+type FCodePos = (FalseCode,Int)
+
+data FalseCode =
                 FNum Int
               | FChar Char
               | FStackOp FalseStackOperation
@@ -27,7 +29,7 @@ data FalseStackOperation =
                           | FPICK
             deriving Show
 
-data FalseArithmeticOperation = 
+data FalseArithmeticOperation =
                                 FPlus
                               | FMinus
                               | FMult
@@ -42,7 +44,7 @@ data FalseCompare = FGreater | FEqual
             deriving Show
 
 data FalseControl =
-                    FLambda [FalseCode]
+                    FLambda [FCodePos]
                   | FExec
                   | FIf
                   | FWhile
@@ -64,21 +66,23 @@ data FIO =
 
 type Code = String
 
-falseParse :: Code -> Either String [FalseCode]
-falseParse [] = Right []
-falseParse a@(c:cs) | isNumber c = (falseParse . dropWhile isNumber $ a) >>= \r -> Right $ (FNum . read . takeWhile isNumber $ a) : r
-                    | c == '\'' = (falseParse . tail $ cs) >>= \r ->  let c' = head cs in
+falseParse :: Int -> Code -> Either String [FCodePos]
+falseParse _ [] = Right []
+falseParse p a@(c:cs)
+                    | isNumber c = let l = length $ takeWhile isNumber a in
+                                    (falseParse (p+l) . dropWhile isNumber $ a) >>= \r -> Right $ (FNum . read . takeWhile isNumber $ a, p) : r
+                    | c == '\'' = (falseParse (p+2) . tail $ cs) >>= \r ->  let c' = head cs in
                                                                       if isAlpha c'
-                                                                      then Right $ FChar (head cs) : r
-                                                                      else throwError $ "Expected letter as char literal; got: '" ++ [c'] ++ "' at " ++ take 5 a ++ " ..."
-                    | c `elem` "$%\\@ø" = falseParse cs >>= \r -> Right $ case c of
+                                                                      then Right $ (FChar (head cs), p) : r
+                                                                      else throwError $ "Expected letter as char literal; got: '" ++ [c'] ++ "' at " ++ show p
+                    | c `elem` "$%\\@ø" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '$' -> FStackOp FDUP
                                                                     '%' -> FStackOp FDROP
                                                                     '\\' -> FStackOp FSWAP
                                                                     '@' -> FStackOp FROT
                                                                     '\248' -> FStackOp FPICK -- This is AltGr+o (\248) (Unicode U+00F8) -> ø
-                                                                : r
-                    | c `elem` "+-*/_&|~" = falseParse cs >>= \r -> Right $ case c of
+                                                                , p) : r
+                    | c `elem` "+-*/_&|~" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '+' -> FArithm FPlus
                                                                     '-' -> FArithm FMinus
                                                                     '*' -> FArithm FMult
@@ -87,35 +91,39 @@ falseParse a@(c:cs) | isNumber c = (falseParse . dropWhile isNumber $ a) >>= \r 
                                                                     '&' -> FArithm FAnd
                                                                     '|' -> FArithm FOr
                                                                     '~' -> FArithm FNot
-                                                                : r
-                    | c `elem` ">=" = falseParse cs >>= \r -> Right $ case c of
+                                                                , p) : r
+                    | c `elem` ">=" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '>' -> FCompare FGreater
                                                                     '=' -> FCompare FEqual
-                                                                : r
+                                                                , p) : r
                     | c == '[' = let lambdacode = getLambda a
+                                     l = length lambdacode
                                      rest = drop (2 + length lambdacode) a
-                                 in falseParse lambdacode >>= \lc -> falseParse rest >>= \r -> Right $ (FControl $ FLambda lc) : r
-                    | c `elem` "!?#" = falseParse cs >>= \r -> Right $ case c of
+                                 in falseParse (p+1) lambdacode >>= \lc -> falseParse (p+l+2) rest >>= \r -> Right $ (FControl (FLambda lc), p) : r
+                    | c `elem` "!?#" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '!' -> FControl FExec
                                                                     '?' -> FControl FIf
                                                                     '#' -> FControl FWhile
-                                                                : r
-                    | isAsciiLower c = falseParse cs >>= \r -> Right $ FVariableOp (FVarRef c) : r
-                    | c `elem` ";:" = falseParse cs >>= \r -> Right $ case c of
+                                                                , p) : r
+                    | isAsciiLower c = falseParse (p+1) cs >>= \r -> Right $ (FVariableOp $ FVarRef c,p) : r
+                    | c `elem` ";:" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     ';' -> FVariableOp FGet
                                                                     ':' -> FVariableOp FPut
-                                                                : r
-                    | c `elem` "^,.ß" = falseParse cs >>= \r -> Right $ case c of
+                                                                , p) : r
+                    | c `elem` "^,.ß" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '^' -> FIOOp FRead
                                                                     ',' -> FIOOp FWrite
                                                                     '.' -> FIOOp FPrintInt
                                                                     'ß' -> FIOOp FFlush
-                                                                : r
+                                                                , p) : r
                     | c == '"' = let str = takeWhile (/='"') cs
                                      rest = drop (2 + length str) a
-                                 in falseParse rest >>= \r -> Right $ FIOOp (FWriteString str) : r
-                    | c == '{' = falseParse (dropComment a)
-                    | otherwise = falseParse cs
+                                     l = length str
+                                 in falseParse (p+l+2)rest >>= \r -> Right $ (FIOOp (FWriteString str),p) : r
+                    | c == '{' = let c = dropComment a
+                                     l = (length a) - (length c)
+                                 in falseParse (p+l+4) c
+                    | otherwise = falseParse (p+1) cs
 
 getLambda :: Code -> Code
 getLambda = init . tail . gl 0
@@ -134,7 +142,10 @@ dropComment = gc 0
           gc _ [] = []
           gc i (c:cs) = case c of
                           '{' -> gc (i + 1) cs
-                          '}' -> if (i - 1) > 0 then gc (i - 1) cs else []
+                          '}' -> if (i - 1) > 0 then gc (i - 1) cs else cs
                           _ -> if i == 0
                                 then cs
                                 else gc i cs
+
+fParse :: Code -> Either String [FCodePos]
+fParse c = falseParse 0 c

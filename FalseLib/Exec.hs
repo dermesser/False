@@ -2,15 +2,17 @@ module FalseLib.Exec where
 
 import FalseLib.Parse
 
+import qualified Data.Map.Strict as Map
 import Control.Monad.Error
 import Data.Bits
 import System.IO
 import Control.Monad.State.Strict
-import qualified Data.Map.Strict as Map
+
+-- types
 
 data FalseData = FalseNum Int
                | FalseChar Char
-               | FalseLambda [FalseCode]
+               | FalseLambda [FCodePos]
                | FalseVRef Char
                deriving Show
 
@@ -21,6 +23,7 @@ type FState = (FStack,FMap)
 
 -- FExecM a => FState -> IO (a,FState)
 type FExecM = StateT FState IO
+-- Utilities
 
 fTrue :: Int
 fTrue = complement 0
@@ -37,245 +40,253 @@ emptyState = (emptyStack,emptyMap)
 fPush :: FalseData -> FExecM ()
 fPush d = StateT $ \(s,m) -> return ((),(d:s,m))
 
-fPop :: FExecM FalseData
-fPop = StateT $ f
-    where f ([],m) = error "Runtime error :: Empty stack!"
+fPop :: Int -> FExecM FalseData
+fPop p = StateT $ f
+    where f ([],m) = error $ "Runtime error :: Empty stack at " ++ show p ++ "!"
           f (s:ss,m) = return (s,(ss,m))
 
-fGetVar :: Char -> FExecM FalseData
-fGetVar c = StateT $ \(s,m) -> case Map.lookup c m of
-                                Nothing -> error "Runtime error :: Undefined reference!"
+fGetVar :: Int -> Char -> FExecM FalseData
+fGetVar p c = StateT $ \(s,m) -> case Map.lookup c m of
+                                Nothing -> error $ "Runtime error :: Undefined reference at " ++ show p ++ "!"
                                 Just v -> return (v,(s,m))
 
 fPutVar :: Char -> FalseData -> FExecM ()
 fPutVar c d = StateT $ \(s,m) -> return ((),(s,Map.insert c d m))
 
 -- type safe pops
-fPopNum :: FExecM Int
-fPopNum = do
-        d <- fPop
+fPopNum :: Int -> FExecM Int
+fPopNum p = do
+        d <- fPop p
         case d of
             FalseNum n -> return n
-            _ -> error "Runtime error :: Expected number on stack!"
+            _ -> error $ "Runtime error :: Expected number on stack at " ++ show p ++ "!"
 
-fPopLambda :: FExecM [FalseCode]
-fPopLambda = do
-        c <- fPop
+fPopLambda :: Int -> FExecM [FCodePos]
+fPopLambda p = do
+        c <- fPop p
         case c of
             FalseLambda l -> return l
-            _ -> error "Runtime error :: Expected Lambda on stack!"
+            _ -> error $ "Runtime error :: Expected Lambda on stack at " ++ show p ++ "!"
 
-fPopRef :: FExecM Char
-fPopRef = do
-        v <- fPop
+fPopRef :: Int -> FExecM Char
+fPopRef p = do
+        v <- fPop p
         case v of
             FalseVRef r -> return r
-            _ -> error "Runtime error :: Expected reference on stack!"
+            _ -> error $ "Runtime error :: Expected reference on stack at " ++ show p ++ "!"
 
-fPopChar :: FExecM Char
-fPopChar = do
-        v <- fPop
+fPopChar :: Int -> FExecM Char
+fPopChar p = do
+        v <- fPop p
         case v of
             FalseChar r -> return r
-            _ -> error "Runtime error :: Expected character on stack!"
+            _ -> error $ "Runtime error :: Expected character on stack at " ++ show p ++ "!"
 
 fGetNItem :: Int -> FExecM FalseData
 fGetNItem i = StateT $ \(s,m) -> return (s !! i,(s,m))
 
-fdup :: FExecM ()
-fdup = do
-        a <- fPop
+-------------------------------------------
+-- Actual FALSE command functions        --
+-------------------------------------------
+
+fdup :: Int -> FExecM ()
+fdup p = do
+        a <- fPop p
         fPush a
         fPush a
         return ()
 
-fdrop :: FExecM ()
-fdrop = do
-        fPop
+fdrop :: Int -> FExecM ()
+fdrop p = do
+        fPop p
         return ()
 
-fswap :: FExecM ()
-fswap = do
-        a <- fPop
-        b <- fPop
+fswap :: Int -> FExecM ()
+fswap p = do
+        a <- fPop p
+        b <- fPop p
         fPush a
         fPush b
         return ()
 
-frot :: FExecM ()
-frot = do
-        a <- fPop
-        b <- fPop
-        c <- fPop
+frot :: Int -> FExecM ()
+frot p = do
+        a <- fPop p
+        b <- fPop p
+        c <- fPop p
         fPush b
         fPush a
         fPush c
         return ()
 
-fpick :: FExecM ()
-fpick = do
-        (FalseNum n) <- fPop
+fpick :: Int -> FExecM ()
+fpick p = do
+        (FalseNum n) <- fPop p
         it <- fGetNItem (n-1)
         fPush it
 
-fplus :: FExecM ()
-fplus = do
-        a <- fPopNum
-        b <- fPopNum
+fplus :: Int -> FExecM ()
+fplus p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ a + b
 
-fminus :: FExecM ()
-fminus = do
-        a <- fPopNum
-        b <- fPopNum
+fminus :: Int -> FExecM ()
+fminus p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ b - a
 
-fmult :: FExecM ()
-fmult = do
-        a <- fPopNum
-        b <- fPopNum
+fmult :: Int -> FExecM ()
+fmult p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ a * b
 
-fdivide :: FExecM ()
-fdivide = do
-        a <- fPopNum
-        b <- fPopNum
+fdivide :: Int -> FExecM ()
+fdivide p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ b `div` a
 
-fnegate :: FExecM ()
-fnegate = do
-        a <- fPopNum
+fnegate :: Int -> FExecM ()
+fnegate p = do
+        a <- fPopNum p
         fPush . FalseNum $ - a
 
-fand :: FExecM ()
-fand = do
-        a <- fPopNum
-        b <- fPopNum
+fand :: Int -> FExecM ()
+fand p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ if a /= 0 && b /= 0 then (fTrue) else 0
 
-for :: FExecM ()
-for = do
-        a <- fPopNum
-        b <- fPopNum
+for :: Int -> FExecM ()
+for p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ if a /= 0 || b /= 0 then (fTrue) else 0
 
-fnot :: FExecM ()
-fnot = do
-        a <- fPopNum
+fnot :: Int -> FExecM ()
+fnot p = do
+        a <- fPopNum p
         fPush . FalseNum $ if a == 0 then (fTrue) else 0
 
-fgreater :: FExecM ()
-fgreater = do
-        a <- fPopNum
-        b <- fPopNum
+fgreater :: Int -> FExecM ()
+fgreater p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ if b > a then fTrue else 0
 
-fequal :: FExecM ()
-fequal = do
-        a <- fPopNum
-        b <- fPopNum
+fequal :: Int -> FExecM ()
+fequal p = do
+        a <- fPopNum p
+        b <- fPopNum p
         fPush . FalseNum $ if b == a then fTrue else 0
 
-fexec :: FExecM ()
-fexec = do
-        l@(FalseLambda code) <- fPop
+fexec :: Int -> FExecM ()
+fexec p = do
+        l@(FalseLambda code) <- fPop p
         falseExec code
 
-fif :: FExecM ()
-fif = do
-        code <- fPopLambda
-        b <- fPopNum
+fif :: Int -> FExecM ()
+fif p = do
+        code <- fPopLambda p
+        b <- fPopNum p
         if b /= 0
          then falseExec code
          else return ()
 
-fwhile :: FExecM ()
-fwhile = do
-        code <- fPopLambda
-        cond <- fPopLambda
+fwhile :: Int -> FExecM ()
+fwhile p = do
+        code <- fPopLambda p
+        cond <- fPopLambda p
         falseExec cond
-        e <- fPopNum
+        e <- fPopNum p
         if e /= 0
          then do
                 falseExec code
                 fPush (FalseLambda cond)
                 fPush (FalseLambda code)
-                fwhile
+                fwhile p
          else return ()
 
-fget :: FExecM ()
-fget = do
-        ref <- fPopRef
-        v <- fGetVar ref
+fget :: Int -> FExecM ()
+fget p = do
+        ref <- fPopRef p
+        v <- fGetVar p ref
         fPush (FalseVRef ref)
         fPush v
 
-fput :: FExecM ()
-fput = do
-        ref <- fPopRef
-        d <- fPop
+fput :: Int -> FExecM ()
+fput p = do
+        ref <- fPopRef p
+        d <- fPop p
         fPutVar ref d
 
-fread :: FExecM ()
-fread = do
+fread :: Int -> FExecM ()
+fread p = do
         c <- liftIO getChar
         fPush (FalseChar c)
 
-fwrite :: FExecM ()
-fwrite = do
-        c <- fPopChar
+fwrite :: Int -> FExecM ()
+fwrite p = do
+        c <- fPopChar p
         liftIO (putChar c)
 
-fwritestring :: String -> FExecM ()
-fwritestring s = do
+fwritestring :: Int -> String -> FExecM ()
+fwritestring p s = do
         liftIO (putStr s)
 
-fprintint :: FExecM ()
-fprintint = do
-        d <- fPopNum
+fprintint :: Int -> FExecM ()
+fprintint p = do
+        d <- fPopNum p
         liftIO (print d)
 
-fflush :: FExecM ()
-fflush = liftIO (hFlush stdout)
+fflush :: Int -> FExecM ()
+fflush p = liftIO (hFlush stdout)
 
-falseExec :: [FalseCode] -> FExecM ()
+falseExec :: [FCodePos] -> FExecM ()
 falseExec [] = return ()
-falseExec a@(c:cs) = case c of
-                        FNum i -> fPush (FalseNum $ fromIntegral i) >> falseExec cs
-                        FChar c -> fPush (FalseChar c) >> falseExec cs
-                        FStackOp op -> case op of
-                                            FDUP -> fdup >> falseExec cs
-                                            FDROP -> fdrop >> falseExec cs
-                                            FSWAP -> fswap >> falseExec cs
-                                            FROT -> frot >> falseExec cs
-                                            FPICK -> fpick >> falseExec cs
-                        FArithm a -> case a of
-                                            FPlus -> fplus >> falseExec cs
-                                            FMinus -> fminus >> falseExec cs
-                                            FMult -> fmult >> falseExec cs
-                                            FDivide -> fdivide >> falseExec cs
-                                            FNegate -> fnegate >> falseExec cs
-                                            FAnd -> fand >> falseExec cs
-                                            FOr -> for >> falseExec cs
-                                            FNot -> fnot >> falseExec cs
-                        FCompare c -> case c of
-                                            FGreater -> fgreater >> falseExec cs
-                                            FEqual -> fequal >> falseExec cs
-                        FControl c -> case c of
-                                            FLambda code -> fPush (FalseLambda code) >> falseExec cs
-                                            FExec -> fexec >> falseExec cs
-                                            FIf -> fif >> falseExec cs
-                                            FWhile -> fwhile >> falseExec cs
-                        FVariableOp o -> case o of
-                                            FVarRef c -> fPush (FalseVRef c) >> falseExec cs
-                                            FGet -> fget >> falseExec cs
-                                            FPut -> fput >> falseExec cs
-                        FIOOp o -> case o of
-                                            FRead -> fread >> falseExec cs
-                                            FWrite -> fwrite >> falseExec cs
-                                            FWriteString s -> fwritestring s >> falseExec cs
-                                            FPrintInt -> fprintint >> falseExec cs
-                                            FFlush -> fflush >> falseExec cs
+falseExec a@(cp:cps) = let (c,p) = cp in
+                        case c of
+                            FNum i -> fPush (FalseNum $ fromIntegral i) >> falseExec cps
+                            FChar c -> fPush (FalseChar c) >> falseExec cps
+                            FStackOp op -> case op of
+                                                FDUP -> fdup p >> falseExec cps
+                                                FDROP -> fdrop p >> falseExec cps
+                                                FSWAP -> fswap p >> falseExec cps
+                                                FROT -> frot p >> falseExec cps
+                                                FPICK -> fpick p >> falseExec cps
+                            FArithm a -> case a of
+                                                FPlus -> fplus p >> falseExec cps
+                                                FMinus -> fminus p >> falseExec cps
+                                                FMult -> fmult p >> falseExec cps
+                                                FDivide -> fdivide p >> falseExec cps
+                                                FNegate -> fnegate p >> falseExec cps
+                                                FAnd -> fand p >> falseExec cps
+                                                FOr -> for p >> falseExec cps
+                                                FNot -> fnot p >> falseExec cps
+                            FCompare c -> case c of
+                                                FGreater -> fgreater p >> falseExec cps
+                                                FEqual -> fequal p >> falseExec cps
+                            FControl c -> case c of
+                                                FLambda code -> fPush (FalseLambda code) >> falseExec cps
+                                                FExec -> fexec p >> falseExec cps
+                                                FIf -> fif p >> falseExec cps
+                                                FWhile -> fwhile p >> falseExec cps
+                            FVariableOp o -> case o of
+                                                FVarRef c -> fPush (FalseVRef c) >> falseExec cps
+                                                FGet -> fget p >> falseExec cps
+                                                FPut -> fput p >> falseExec cps
+                            FIOOp o -> case o of
+                                                FRead -> fread p >> falseExec cps
+                                                FWrite -> fwrite p >> falseExec cps
+                                                FWriteString s -> fwritestring p s >> falseExec cps
+                                                FPrintInt -> fprintint p >> falseExec cps
+                                                FFlush -> fflush p >> falseExec cps
 
-fExec :: [FalseCode] -> IO ()
-fExec c = void $ runStateT (falseExec c) emptyState
+fExec :: Code -> IO ()
+fExec c = void $ runStateT (falseExec code) emptyState
+    where code = case fParse c of
+                    Left e -> error e
+                    Right c -> c
