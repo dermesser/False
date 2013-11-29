@@ -122,7 +122,7 @@ frot p = do
 fpick :: Int -> FExecM ()
 fpick p = do
         (FalseNum n) <- fPop p
-        it <- fGetNItem (n-1)
+        it <- fGetNItem n
         fPush it
 
 fplus :: Int -> FExecM ()
@@ -214,7 +214,6 @@ fget :: Int -> FExecM ()
 fget p = do
         ref <- fPopRef p
         v <- fGetVar p ref
-        fPush (FalseVRef ref)
         fPush v
 
 fput :: Int -> FExecM ()
