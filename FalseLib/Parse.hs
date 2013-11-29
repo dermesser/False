@@ -122,7 +122,7 @@ falseParse p a@(c:cs)
                                  in falseParse (p+l+2)rest >>= \r -> Right $ (FIOOp (FWriteString str),p) : r
                     | c == '{' = let c = dropComment a
                                      l = (length a) - (length c)
-                                 in falseParse (p+l+4) c
+                                 in falseParse (p+l) c
                     | otherwise = falseParse (p+1) cs
 
 getLambda :: Code -> Code
