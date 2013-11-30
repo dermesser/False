@@ -16,10 +16,10 @@ The FalseExec front-end is quite minimalistic, but works fine. Once started, it 
     Haskell FALSE interpreter
     Waiting for code... (end with Ctrl-D)
 
-After putting the code either on stdin the user has to signal the end of his input by EOF (Ctrl-D). This is not
-necessary if the code is read from a file (using input redirection).
+After entering the code on stdin the user has to show the interpreter that he's finished; this is done by pressing [Ctrl-D]. 
+This is not necessary if the code is read from a file (using input redirection: `$ ./FalseExec < script.f`)
 
-When the interpreter received the EOF signal, it starts processing the code. All of the I/O actions of the FALSE
+As soon as the interpreter received the EOF signal, it starts processing the code. All of the I/O actions of the FALSE
 script appear below this line:
 
     ---------- I/O ----------
@@ -38,6 +38,7 @@ the code is enumerated with the positions, starting at 0:
      5 ` . . ´
     10 `. .´
 
-The chunks are each five characters long. Position 12 is in the last chunk the very last character; we now
-know that we tried to print the top-most stack item but it failed because there wasn't any item on the
+The chunks are each five characters long. Position 12 is the very last character in the last chunk; we now
+know that we tried to print the top-most stack item which failed because there wasn't any item on the
 stack.
+
