@@ -11,7 +11,7 @@ One front-end is shipped as FalseExec.
 
 ## Execution
 
-The FalseExec front-end is quite minimalistic, but works fine. After calling the binary, it asks for code:
+The FalseExec front-end is quite minimalistic, but works fine. Once started, it shows the following prompt:
 
     Haskell FALSE interpreter
     Waiting for code... (end with Ctrl-D)
