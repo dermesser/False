@@ -7,6 +7,7 @@ import Data.Bits
 import Data.List.Split
 import Text.Printf
 import System.IO
+import System.Exit
 import Control.Monad.Error
 import Control.Monad.State.Strict
 
@@ -292,12 +293,13 @@ falseExec a@(cp:cps) = let (c,p) = cp in
 fExec :: Code -> IO ()
 fExec c = do
         putStrLn "\n---------- I/O ----------"
-        result <- runErrorT (runStateT (falseExec code) emptyState)
+        parsed <- parseCode
+        result <- runErrorT (runStateT (falseExec parsed) emptyState)
         case result of
             Left e -> putStrLn e >> enumCode
             Right x -> (void . return $ result)
-    where code = case fParse c of
-                    Left e -> error e
-                    Right c -> c
+    where parseCode = case fParse c of
+                    Left e -> putStrLn e >> exitWith (ExitFailure 1)
+                    Right c -> return c
           enumCode = mapM_ (\(c,n) -> putStrLn $ (printf "%3i" n) ++ " `" ++ c ++ "´") enumChunks
           enumChunks = zip (chunksOf 5 c) ([0,5..] :: [Int])
