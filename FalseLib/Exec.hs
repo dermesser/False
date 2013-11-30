@@ -3,9 +3,11 @@ module FalseLib.Exec where
 import FalseLib.Parse
 
 import qualified Data.Map.Strict as Map
-import Control.Monad.Error
 import Data.Bits
+import Data.List.Split
+import Text.Printf
 import System.IO
+import Control.Monad.Error
 import Control.Monad.State.Strict
 
 -- types
@@ -21,8 +23,8 @@ type FMap = Map.Map Char FalseData
 
 type FState = (FStack,FMap)
 
--- FExecM a => FState -> IO (a,FState)
-type FExecM = StateT FState IO
+-- FExecM a => FState -> IO (Either String (a,FState))
+type FExecM = StateT FState (ErrorT String IO)
 -- Utilities
 
 fTrue :: Int
@@ -41,13 +43,14 @@ fPush :: FalseData -> FExecM ()
 fPush d = StateT $ \(s,m) -> return ((),(d:s,m))
 
 fPop :: Int -> FExecM FalseData
-fPop p = StateT $ f
-    where f ([],m) = error $ "Runtime error :: Empty stack at " ++ show p ++ "!"
+fPop p = StateT f
+    where f :: FState -> ErrorT String (IO) (FalseData,FState)
+          f ([],m) = throwError ("Runtime error :: Empty stack at " ++ show p ++ "!")
           f (s:ss,m) = return (s,(ss,m))
 
 fGetVar :: Int -> Char -> FExecM FalseData
 fGetVar p c = StateT $ \(s,m) -> case Map.lookup c m of
-                                Nothing -> error $ "Runtime error :: Undefined reference at " ++ show p ++ "!"
+                                Nothing -> throwError $ "Runtime error :: Undefined reference at " ++ show p ++ "!"
                                 Just v -> return (v,(s,m))
 
 fPutVar :: Char -> FalseData -> FExecM ()
@@ -59,31 +62,33 @@ fPopNum p = do
         d <- fPop p
         case d of
             FalseNum n -> return n
-            _ -> error $ "Runtime error :: Expected number on stack at " ++ show p ++ "!"
+            _ -> throwError $ "Runtime error :: Expected number on stack at " ++ show p ++ "!"
 
 fPopLambda :: Int -> FExecM [FCodePos]
 fPopLambda p = do
         c <- fPop p
         case c of
             FalseLambda l -> return l
-            _ -> error $ "Runtime error :: Expected Lambda on stack at " ++ show p ++ "!"
+            _ -> throwError $ "Runtime error :: Expected Lambda on stack at " ++ show p ++ "!"
 
 fPopRef :: Int -> FExecM Char
 fPopRef p = do
         v <- fPop p
         case v of
             FalseVRef r -> return r
-            _ -> error $ "Runtime error :: Expected reference on stack at " ++ show p ++ "!"
+            _ -> throwError $ "Runtime error :: Expected reference on stack at " ++ show p ++ "!"
 
 fPopChar :: Int -> FExecM Char
 fPopChar p = do
         v <- fPop p
         case v of
             FalseChar r -> return r
-            _ -> error $ "Runtime error :: Expected character on stack at " ++ show p ++ "!"
+            _ -> throwError $ "Runtime error :: Expected character on stack at " ++ show p ++ "!"
 
-fGetNItem :: Int -> FExecM FalseData
-fGetNItem i = StateT $ \(s,m) -> return (s !! i,(s,m))
+fGetNItem :: Int -> Int -> FExecM FalseData
+fGetNItem p i = StateT $ \(s,m) -> if i > (length s) - 1
+                                 then throwError $ "Runtime error :: Index too high at PICK (pos. " ++ show p ++ ")!"
+                                 else return (s !! i,(s,m))
 
 -------------------------------------------
 -- Actual FALSE command functions        --
@@ -122,7 +127,7 @@ frot p = do
 fpick :: Int -> FExecM ()
 fpick p = do
         (FalseNum n) <- fPop p
-        it <- fGetNItem n
+        it <- fGetNItem p n
         fPush it
 
 fplus :: Int -> FExecM ()
@@ -285,7 +290,14 @@ falseExec a@(cp:cps) = let (c,p) = cp in
                                                 FFlush -> fflush p >> falseExec cps
 
 fExec :: Code -> IO ()
-fExec c = void $ runStateT (falseExec code) emptyState
+fExec c = do
+        putStrLn "\n---------- I/O ----------"
+        result <- runErrorT (runStateT (falseExec code) emptyState)
+        case result of
+            Left e -> putStrLn e >> enumCode
+            Right x -> (void . return $ result)
     where code = case fParse c of
                     Left e -> error e
                     Right c -> c
+          enumCode = mapM_ (\(c,n) -> putStrLn $ (printf "%3i" n) ++ " `" ++ c ++ "´") enumChunks
+          enumChunks = zip (chunksOf 5 c) ([0,5..] :: [Int])
