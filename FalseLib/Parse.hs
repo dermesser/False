@@ -72,9 +72,7 @@ falseParse p a@(c:cs)
                     | isNumber c = let l = length $ takeWhile isNumber a in
                                     (falseParse (p+l) . dropWhile isNumber $ a) >>= \r -> Right $ (FNum . read . takeWhile isNumber $ a, p) : r
                     | c == '\'' = (falseParse (p+2) . tail $ cs) >>= \r ->  let c' = head cs in
-                                                                      if isAlpha c'
-                                                                      then Right $ (FChar (head cs), p) : r
-                                                                      else throwError $ "Expected letter as char literal; got: '" ++ [c'] ++ "' at " ++ show p
+                                                                            Right $ (FChar c', p) : r
                     | c `elem` "$%\\@ø" = falseParse (p+1) cs >>= \r -> Right $ (case c of
                                                                     '$' -> FStackOp FDUP
                                                                     '%' -> FStackOp FDROP
